@@ -25,6 +25,7 @@ function showNotification(message, type) {
   notificationDiv.className = `notification ${type}`;
   notificationDiv.dataset.qa = 'notification';
   notificationDiv.textContent = message;
+  // Basic styles for visibility
   notificationDiv.style.position = 'fixed';
   notificationDiv.style.top = '10px';
   notificationDiv.style.right = '10px';
@@ -42,7 +43,9 @@ function showNotification(message, type) {
   document.body.appendChild(notificationDiv);
 
   setTimeout(() => {
-    notificationDiv.remove();
+    if (notificationDiv.parentNode) {
+      notificationDiv.remove();
+    }
   }, 3000);
 }
 
@@ -118,7 +121,13 @@ function createEmployeeForm() {
   form.appendChild(submitButton);
 
   form.addEventListener('submit', handleFormSubmit);
-  document.body.appendChild(form);
+
+  // Append form next to the table if possible, otherwise to body
+  if (table && table.parentNode) {
+    table.parentNode.insertBefore(form, table.nextSibling);
+  } else {
+    document.body.appendChild(form);
+  }
 }
 
 // --- Add Row to Table ---
@@ -140,7 +149,12 @@ function addEmployeeToTable(employeeData) {
       if (!isNaN(salaryNumber)) {
         value = `$${salaryNumber.toLocaleString('en-US')}`;
       } else {
-        value = '$' + value;
+        // Attempt to format even if input wasn't strictly a number initially
+        value =
+          '$' +
+          String(value)
+            .replace(/\D/g, '')
+            .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
       }
     }
     cell.textContent = value;
@@ -151,9 +165,8 @@ function addEmployeeToTable(employeeData) {
   tableBody.appendChild(newRow);
 }
 
-// --- Form Submit Handler ---
+// --- Form Submit Handler (with whitespace validation fix) ---
 function handleFormSubmit(evt) {
-  // Changed parameter name
   evt.preventDefault();
 
   const form = evt.target;
@@ -162,53 +175,72 @@ function handleFormSubmit(evt) {
   let isValid = true;
   let errorMessage = '';
 
+  // Collect and validate required fields (trimming strings first)
   for (const [key, value] of formData.entries()) {
-    if (!value && value !== 0) {
+    const processedValue = typeof value === 'string' ? value.trim() : value;
+
+    // Check for empty required fields using the processed value
+    if (!processedValue && processedValue !== 0) {
+      // Allow 0 as valid numeric input
       isValid = false;
 
       const fieldName = key.charAt(0).toUpperCase() + key.slice(1);
 
       errorMessage = `${fieldName} field is required.`;
-      break;
+      break; // Stop validation on first empty required field
     }
-    employee[key] = typeof value === 'string' ? value.trim() : value;
+    // Assign the processed (and potentially trimmed) value
+    employee[key] = processedValue;
   }
 
+  // Proceed with further validation only if required fields are filled
   if (isValid) {
+    // Name validation
     if (employee.name.length < 4) {
       isValid = false;
       errorMessage = 'Name must be at least 4 characters long.';
     }
 
-    const ageNumber = Number(employee.age);
+    // Age validation (only if still valid)
+    if (isValid) {
+      const ageNumber = Number(employee.age);
 
-    if (isNaN(ageNumber) || ageNumber < 18 || ageNumber > 90) {
-      isValid = false;
-      errorMessage = 'Age must be a number between 18 and 90.';
+      if (isNaN(ageNumber) || ageNumber < 18 || ageNumber > 90) {
+        isValid = false;
+        errorMessage = 'Age must be a number between 18 and 90.';
+      }
     }
 
-    const salaryNumber = Number(employee.salary);
+    // Salary validation (only if still valid)
+    if (isValid) {
+      const salaryNumber = Number(employee.salary);
 
-    if (isNaN(salaryNumber) || salaryNumber < 0) {
-      isValid = false;
-      errorMessage = 'Salary must be a positive number.';
-    } else {
-      employee.salary = salaryNumber;
+      if (isNaN(salaryNumber) || salaryNumber < 0) {
+        isValid = false;
+        errorMessage = 'Salary must be a positive number.';
+      } else {
+        // Store the numeric salary for the object passed to addEmployeeToTable
+        employee.salary = salaryNumber;
+      }
     }
   }
 
+  // Show notification or add data
   if (isValid) {
     addEmployeeToTable(employee);
     showNotification('Employee added successfully!', 'success');
     form.reset();
   } else {
+    // Ensure an error message exists if validation failed
+    if (!errorMessage) {
+      errorMessage = 'Please fill all required fields correctly.';
+    }
     showNotification(errorMessage, 'error');
   }
 }
 
 // --- Row Selection Handler ---
 function handleRowClick(evt) {
-  // Changed parameter name
   const clickedRow = evt.currentTarget;
 
   if (selectedRow && selectedRow !== clickedRow) {
@@ -226,9 +258,9 @@ function handleRowClick(evt) {
 
 // --- Sorting Handler ---
 function handleSortClick(evt) {
-  // Changed parameter name
   const clickedHeader = evt.target;
 
+  // Ensure the click is on a TH within the THEAD
   if (
     clickedHeader.tagName !== 'TH' ||
     !tableBody ||
@@ -241,15 +273,18 @@ function handleSortClick(evt) {
   const columnIndex = clickedHeader.cellIndex;
   let newDirection = 'ASC';
 
+  // Update sort direction logic
   if (columnIndex === sortColumnIndex) {
     newDirection = sortDirection === 'ASC' ? 'DESC' : 'ASC';
   } else {
-    newDirection = 'ASC';
+    newDirection = 'ASC'; // Default to ASC for a new column
   }
 
+  // Update state
   sortColumnIndex = columnIndex;
   sortDirection = newDirection;
 
+  // Perform the sort
   sortTable(columnIndex, sortDirection);
 }
 
@@ -269,13 +304,13 @@ function sortTable(columnIndex, direction) {
     const isNumericColumn = columnIndex === 3 || columnIndex === 4;
 
     if (isNumericColumn) {
-      // Removed unnecessary escape for $
-      const cleanValA = cellA.replace(/[$,]/g, '');
+      const cleanValA = cellA.replace(/[$,]/g, ''); // remove $ and ,
       const cleanValB = cellB.replace(/[$,]/g, '');
 
       valA = parseFloat(cleanValA);
       valB = parseFloat(cleanValB);
 
+      // Handle NaN comparison gracefully for sorting
       if (isNaN(valA)) {
         valA = direction === 'ASC' ? Infinity : -Infinity;
       }
@@ -285,6 +320,7 @@ function sortTable(columnIndex, direction) {
       }
     }
 
+    // Comparison logic
     if (valA < valB) {
       return direction === 'ASC' ? -1 : 1;
     }
@@ -293,24 +329,32 @@ function sortTable(columnIndex, direction) {
       return direction === 'ASC' ? 1 : -1;
     }
 
-    return 0;
+    return 0; // equal
   };
 
   rowsArray.sort(compareRows);
+
+  // Re-append rows to tbody in sorted order
   rowsArray.forEach((row) => tableBody.appendChild(row));
 }
 
 // --- Initial Setup ---
+// Create the form when the script runs
 createEmployeeForm();
 
+// Add event listeners if the table exists
 if (table) {
   if (tableHead) {
     tableHead.addEventListener('click', handleSortClick);
   }
 
   if (tableBody) {
+    // Add listener to existing rows
     Array.from(tableBody.rows).forEach((row) => {
       row.addEventListener('click', handleRowClick);
     });
+    // Note: New rows added via the form get their listener
+    // attached in addEmployeeToTable function.
+    // Alternatively, could use event delegation on tableBody.
   }
 }
